@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 )
 
 // Define a struct for the Huffman tree node
 type Node struct {
-	Symbol      byte
-	Frequency   int
-	Left, Right *Node
+	Symbol    byte
+	Frequency int
+	Left      *Node
+	Right     *Node
 }
 
 // Define a type for Huffman code
@@ -43,9 +43,13 @@ func buildHuffmanTree(frequencies map[byte]int) *Node {
 
 // Function to sort nodes by frequency
 func sortNodes(nodes []*Node) {
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Frequency < nodes[j].Frequency
-	})
+	for i := 1; i < len(nodes); i++ {
+		j := i
+		for j > 0 && nodes[j].Frequency < nodes[j-1].Frequency {
+			nodes[j], nodes[j-1] = nodes[j-1], nodes[j]
+			j--
+		}
+	}
 }
 
 // Function to generate Huffman codes
@@ -78,20 +82,26 @@ func encode(data []byte, codes HuffmanCode) string {
 }
 
 // Function to write encoded data to file
-func writeEncodedData(encodedData string, codes HuffmanCode, outputFileName string) error {
+func writeEncodedData(encodedData string, outputFileName string, password string, codes HuffmanCode) error {
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
 		return err
 	}
 	defer outputFile.Close()
 
-	// Write Huffman codes to file for decompression
+	// Write password to file
+	fmt.Fprintln(outputFile, password)
+
+	// Separator between password and encoded data
+	fmt.Fprintln(outputFile, "----DATA----")
+
+	// Write Huffman codes to file
 	for symbol, code := range codes {
 		fmt.Fprintf(outputFile, "%c:%s\n", symbol, code)
 	}
 
 	// Separator between codes and encoded data
-	fmt.Fprintln(outputFile, "DATA")
+	fmt.Fprintln(outputFile, "----END CODES----")
 
 	// Write encoded data to file
 	_, err = outputFile.WriteString(encodedData)
@@ -118,15 +128,11 @@ func readCodes(scanner *bufio.Scanner) (HuffmanCode, error) {
 
 // Function to decode data using Huffman codes
 func decode(encodedData string, codes HuffmanCode) []byte {
-	reverseCodes := make(map[string]byte)
-	for symbol, code := range codes {
-		reverseCodes[code] = symbol
-	}
 	var decoded strings.Builder
 	code := ""
 	for _, bit := range encodedData {
 		code += string(bit)
-		if symbol, ok := reverseCodes[code]; ok {
+		if symbol, ok := reverseLookup(codes, code); ok {
 			decoded.WriteByte(symbol)
 			code = ""
 		}
@@ -134,17 +140,60 @@ func decode(encodedData string, codes HuffmanCode) []byte {
 	return []byte(decoded.String())
 }
 
+// Function to reverse lookup symbol from Huffman codes
+func reverseLookup(codes HuffmanCode, code string) (byte, bool) {
+	for symbol, c := range codes {
+		if c == code {
+			return symbol, true
+		}
+	}
+	return 0, false
+}
+
 // Function to read encoded data from file
-func readEncodedData(scanner *bufio.Scanner) (string, error) {
-	var encodedData strings.Builder
+func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) {
+	inputFile, err := os.Open(inputFileName)
+	if err != nil {
+		return "", "", nil, err
+	}
+	defer inputFile.Close()
+
+	scanner := bufio.NewScanner(inputFile)
+
+	// Read password from the first line
+	scanner.Scan()
+	password := scanner.Text()
+
+	// Read until the separator "----DATA----"
+	for scanner.Scan() {
+		if scanner.Text() == "----DATA----" {
+			break
+		}
+	}
+
+	// Read Huffman codes
+	codes := make(HuffmanCode)
 	for scanner.Scan() {
 		line := scanner.Text()
-		encodedData.WriteString(line)
+		if line == "----END CODES----" {
+			break
+		}
+		if len(line) > 2 && line[1] == ':' {
+			codes[line[0]] = line[2:]
+		}
 	}
+
+	// Read the rest of the data
+	var encodedData string
+	for scanner.Scan() {
+		encodedData += scanner.Text() + "\n"
+	}
+
 	if err := scanner.Err(); err != nil {
-		return "", err
+		return "", "", nil, err
 	}
-	return encodedData.String(), nil
+
+	return encodedData, password, codes, nil
 }
 
 func main() {
@@ -152,6 +201,7 @@ func main() {
 	decompress := flag.Bool("decompress", false, "Decompress the input file")
 	inputFileName := flag.String("input", "input.txt", "Input file name")
 	outputFileName := flag.String("output", "output.bin", "Output file name")
+	password := flag.String("password", "", "Password for accessing the compressed data")
 	flag.Parse()
 
 	if *compress {
@@ -185,7 +235,7 @@ func main() {
 		encodedData := encode(data, codes)
 
 		// Write encoded data to output file
-		err = writeEncodedData(encodedData, codes, *outputFileName)
+		err = writeEncodedData(encodedData, *outputFileName, *password, codes)
 		if err != nil {
 			fmt.Println("Error:", err)
 			return
@@ -203,6 +253,30 @@ func main() {
 
 		scanner := bufio.NewScanner(inputFile)
 
+		// Read password
+		scanner.Scan()
+		// password := scanner.Text()
+
+		if *password == "" {
+			fmt.Println("Error: Password is required for decompression.")
+			return
+		}
+
+		// Read password from file
+		_, storedPassword, _, err := readEncodedData(*inputFileName)
+		if err != nil {
+			fmt.Println("Error reading password from file:", err)
+			return
+		}
+
+		// Compare passwords
+		fmt.Printf("password : %s \n", *password)
+		fmt.Printf("storedPassword : %s \n", storedPassword)
+		if *password != storedPassword {
+			fmt.Println("Error: Incorrect password.")
+			return
+		}
+
 		// Read Huffman codes
 		codes, err := readCodes(scanner)
 		if err != nil {
@@ -210,8 +284,9 @@ func main() {
 			return
 		}
 
-		// Read encoded data
-		encodedData, err := readEncodedData(scanner)
+		// Read encoded
+		// data
+		encodedData, _, _, err := readEncodedData(*inputFileName)
 		if err != nil {
 			fmt.Println("Error reading encoded data:", err)
 			return
