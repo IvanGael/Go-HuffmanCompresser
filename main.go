@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"sort"
 )
@@ -102,7 +102,7 @@ func main() {
 	}
 	defer inputFile.Close()
 
-	data, err := ioutil.ReadAll(inputFile)
+	data, err := io.ReadAll(inputFile)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
