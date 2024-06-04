@@ -168,7 +168,7 @@ func TestMain_CompressAndDecompress(t *testing.T) {
 	main()
 
 	// Test decompression
-	decompressArgs := []string{"-decompress", "-input", outputFileName, "-output", "test_output.txt", "-password", password}
+	decompressArgs := []string{"-decompress", "-input", outputFileName, "-output", "output.txt", "-password", password}
 	flag.CommandLine = flag.NewFlagSet("test", flag.ExitOnError)
 	os.Args = append([]string{"test"}, decompressArgs...)
 	main()
@@ -179,7 +179,7 @@ func TestMain_CompressAndDecompress(t *testing.T) {
 		t.Errorf("Error reading original input file: %v", err)
 	}
 
-	decodedData, err := os.ReadFile("test_output.txt")
+	decodedData, err := os.ReadFile("output.txt")
 	if err != nil {
 		t.Errorf("Error reading decompressed output file: %v", err)
 	}
