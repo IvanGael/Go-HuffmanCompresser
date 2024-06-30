@@ -2,8 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -81,6 +86,57 @@ func encode(data string, codes HuffmanCode) string {
 	return encoded.String()
 }
 
+// Function to encrypt password
+func encryptPassword(password string) (string, error) {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	ciphertext := make([]byte, aes.BlockSize+len(password))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return "", err
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(password))
+
+	return base64.StdEncoding.EncodeToString(append(key, ciphertext...)), nil
+}
+
+// Function to decrypt password
+func decryptPassword(encryptedPassword string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encryptedPassword)
+	if err != nil {
+		return "", err
+	}
+
+	key := data[:32]
+	ciphertext := data[32:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	if len(ciphertext) < aes.BlockSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	return string(ciphertext), nil
+}
+
 // Function to write encoded data to file
 func writeEncodedData(encodedData string, outputFileName string, password string, codes HuffmanCode) error {
 	outputFile, err := os.Create(outputFileName)
@@ -89,8 +145,14 @@ func writeEncodedData(encodedData string, outputFileName string, password string
 	}
 	defer outputFile.Close()
 
-	// Write password to file
-	fmt.Fprintln(outputFile, password)
+	// Encrypt password
+	encryptedPassword, err := encryptPassword(password)
+	if err != nil {
+		return err
+	}
+
+	// Write encrypted password to file
+	fmt.Fprintln(outputFile, encryptedPassword)
 
 	// Separator between password and encoded data
 	fmt.Fprintln(outputFile, "----DATA----")
@@ -162,9 +224,15 @@ func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) 
 
 	scanner := bufio.NewScanner(inputFile)
 
-	// Read password from the first line
+	// Read encrypted password from the first line
 	scanner.Scan()
-	password := scanner.Text()
+	encryptedPassword := scanner.Text()
+
+	// Decrypt password
+	password, err := decryptPassword(encryptedPassword)
+	if err != nil {
+		return "", "", nil, err
+	}
 
 	// Read until the separator "----DATA----"
 	for scanner.Scan() {
