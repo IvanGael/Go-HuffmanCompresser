@@ -2,27 +2,27 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // Define a struct for the Huffman tree node
 type Node struct {
-	Symbol    byte
+	Symbol    rune
 	Frequency int
 	Left      *Node
 	Right     *Node
 }
 
 // Define a type for Huffman code
-type HuffmanCode map[byte]string
+type HuffmanCode map[rune]string
 
 // Function to build Huffman tree
-func buildHuffmanTree(frequencies map[byte]int) *Node {
+func buildHuffmanTree(frequencies map[rune]int) *Node {
 	var nodes []*Node
 	for symbol, freq := range frequencies {
 		nodes = append(nodes, &Node{Symbol: symbol, Frequency: freq})
@@ -74,7 +74,7 @@ func generateCodeRec(node *Node, code string, codes HuffmanCode) {
 }
 
 // Function to encode data using Huffman codes
-func encode(data []byte, codes HuffmanCode) string {
+func encode(data string, codes HuffmanCode) string {
 	var encoded strings.Builder
 	for _, symbol := range data {
 		encoded.WriteString(codes[symbol])
@@ -98,7 +98,7 @@ func writeEncodedData(encodedData string, outputFileName string, password string
 
 	// Write Huffman codes to file
 	for symbol, code := range codes {
-		fmt.Fprintf(outputFile, "%c:%s\n", symbol, code)
+		fmt.Fprintf(outputFile, "%d:%s\n", symbol, code)
 	}
 
 	// Separator between codes and encoded data
@@ -114,11 +114,13 @@ func readCodes(scanner *bufio.Scanner) (HuffmanCode, error) {
 	codes := make(HuffmanCode)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line == "DATA" {
+		if line == "----END CODES----" {
 			break
 		}
-		if len(line) > 2 && line[1] == ':' {
-			codes[line[0]] = line[2:]
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			symbol, _ := strconv.Atoi(parts[0])
+			codes[rune(symbol)] = parts[1]
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -128,22 +130,21 @@ func readCodes(scanner *bufio.Scanner) (HuffmanCode, error) {
 }
 
 // Function to decode data using Huffman codes
-func decode(encodedData string, codes HuffmanCode) []byte {
-	var decoded bytes.Buffer
+func decode(encodedData string, codes HuffmanCode) string {
+	var decoded strings.Builder
 	code := ""
 	for _, bit := range encodedData {
 		code += string(bit)
 		if symbol, ok := reverseLookup(codes, code); ok {
-			decoded.WriteByte(symbol)
+			decoded.WriteRune(symbol)
 			code = ""
 		}
 	}
-	// Replace the special character with newline
-	return bytes.ReplaceAll(decoded.Bytes(), []byte{'\x00'}, []byte{'\n'})
+	return strings.ReplaceAll(decoded.String(), "\x00", "\n")
 }
 
 // Function to reverse lookup symbol from Huffman codes
-func reverseLookup(codes HuffmanCode, code string) (byte, bool) {
+func reverseLookup(codes HuffmanCode, code string) (rune, bool) {
 	for symbol, c := range codes {
 		if c == code {
 			return symbol, true
@@ -174,15 +175,9 @@ func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) 
 	}
 
 	// Read Huffman codes
-	codes := make(HuffmanCode)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "----END CODES----" {
-			break
-		}
-		if len(line) > 2 && line[1] == ':' {
-			codes[line[0]] = line[2:]
-		}
+	codes, err := readCodes(scanner)
+	if err != nil {
+		return "", "", nil, err
 	}
 
 	// Read the rest of the data
@@ -208,25 +203,18 @@ func main() {
 
 	if *compress {
 		// Read input data
-		inputFile, err := os.Open(*inputFileName)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		defer inputFile.Close()
-
-		data, err := io.ReadAll(inputFile)
+		data, err := ioutil.ReadFile(*inputFileName)
 		if err != nil {
 			fmt.Println("Error:", err)
 			return
 		}
 
 		// Replace newline characters with a special character
-		data = bytes.ReplaceAll(data, []byte{'\n'}, []byte{'\x00'})
+		content := strings.ReplaceAll(string(data), "\n", "\x00")
 
 		// Calculate symbol frequencies
-		frequencies := make(map[byte]int)
-		for _, symbol := range data {
+		frequencies := make(map[rune]int)
+		for _, symbol := range content {
 			frequencies[symbol]++
 		}
 
@@ -237,7 +225,7 @@ func main() {
 		codes := generateCodes(root)
 
 		// Encode input data
-		encodedData := encode(data, codes)
+		encodedData := encode(content, codes)
 
 		// Write encoded data to output file
 		err = writeEncodedData(encodedData, *outputFileName, *password, codes)
@@ -249,50 +237,21 @@ func main() {
 		fmt.Println("Compression successful. Output written to", *outputFileName)
 	} else if *decompress {
 		// Read input file
-		inputFile, err := os.Open(*inputFileName)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		defer inputFile.Close()
-
-		scanner := bufio.NewScanner(inputFile)
-
-		// Read password
-		scanner.Scan()
-		// password := scanner.Text()
-
 		if *password == "" {
 			fmt.Println("Error: Password is required for decompression.")
 			return
 		}
 
-		// Read password from file
-		_, storedPassword, _, err := readEncodedData(*inputFileName)
+		// Read encoded data from file
+		encodedData, storedPassword, codes, err := readEncodedData(*inputFileName)
 		if err != nil {
-			fmt.Println("Error reading password from file:", err)
+			fmt.Println("Error reading encoded data:", err)
 			return
 		}
 
 		// Compare passwords
-		fmt.Printf("password : %s \n", *password)
-		fmt.Printf("storedPassword : %s \n", storedPassword)
 		if *password != storedPassword {
 			fmt.Println("Error: Incorrect password.")
-			return
-		}
-
-		// Read Huffman codes
-		codes, err := readCodes(scanner)
-		if err != nil {
-			fmt.Println("Error reading Huffman codes:", err)
-			return
-		}
-
-		// Read encoded data
-		encodedData, _, _, err := readEncodedData(*inputFileName)
-		if err != nil {
-			fmt.Println("Error reading encoded data:", err)
 			return
 		}
 
@@ -300,7 +259,7 @@ func main() {
 		decodedData := decode(encodedData, codes)
 
 		// Write decoded data to output file
-		err = os.WriteFile(*outputFileName, decodedData, 0644)
+		err = ioutil.WriteFile(*outputFileName, []byte(decodedData), 0644)
 		if err != nil {
 			fmt.Println("Error writing decoded data:", err)
 			return

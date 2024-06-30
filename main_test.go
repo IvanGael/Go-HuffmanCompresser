@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"os"
 	"reflect"
@@ -12,7 +11,7 @@ import (
 
 func TestBuildHuffmanTree(t *testing.T) {
 	// Define input symbol frequencies
-	frequencies := map[byte]int{'a': 5, 'b': 10, 'c': 15}
+	frequencies := map[rune]int{'a': 5, 'b': 10, 'c': 15}
 
 	// Build Huffman tree
 	root := buildHuffmanTree(frequencies)
@@ -21,8 +20,6 @@ func TestBuildHuffmanTree(t *testing.T) {
 	if root == nil {
 		t.Error("Expected non-nil root node")
 	}
-
-	// Additional assertions to ensure the Huffman tree is built correctly
 
 	// Assert that all symbols are present in the tree
 	for symbol := range frequencies {
@@ -41,7 +38,7 @@ func TestBuildHuffmanTree(t *testing.T) {
 }
 
 // Helper function to check if a symbol exists in the Huffman tree
-func symbolExistsInTree(node *Node, symbol byte) bool {
+func symbolExistsInTree(node *Node, symbol rune) bool {
 	if node == nil {
 		return false
 	}
@@ -52,7 +49,7 @@ func symbolExistsInTree(node *Node, symbol byte) bool {
 }
 
 // Helper function to assert that frequencies are correctly propagated throughout the tree
-func assertFrequencies(t *testing.T, node *Node, frequencies map[byte]int) {
+func assertFrequencies(t *testing.T, node *Node, frequencies map[rune]int) {
 	if node == nil {
 		return
 	}
@@ -117,7 +114,7 @@ func TestGenerateCodes(t *testing.T) {
 
 func TestEncode(t *testing.T) {
 	codes := HuffmanCode{'a': "0", 'b': "10", 'c': "110", 'd': "111"}
-	data := []byte{'a', 'b', 'c', 'd', 'a', 'b', 'a'}
+	data := "abcdaba"
 
 	encoded := encode(data, codes)
 
@@ -133,14 +130,14 @@ func TestDecode(t *testing.T) {
 
 	decoded := decode(encoded, codes)
 
-	expected := []byte{'a', 'b', 'c', 'd', 'a', 'b', 'a'}
-	if !bytes.Equal(decoded, expected) {
-		t.Errorf("Decoded data: %v, Expected: %v", decoded, expected)
+	expected := "abcdaba"
+	if decoded != expected {
+		t.Errorf("Decoded data: %s, Expected: %s", decoded, expected)
 	}
 }
 
 func TestReadCodes(t *testing.T) {
-	input := "a:0\nb:10\nc:110\nd:111\n----DATA----\n"
+	input := "97:0\n98:10\n99:110\n100:111\n----END CODES----\n"
 
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	codes, err := readCodes(scanner)
@@ -160,6 +157,13 @@ func TestMain_CompressAndDecompress(t *testing.T) {
 	inputFileName := "input.txt"
 	outputFileName := "output.bin"
 	password := "testpassword"
+
+	// Create a sample input file
+	sampleInput := "Hello, World!\nThis is a test.\nSpecial characters: £¤"
+	err := os.WriteFile(inputFileName, []byte(sampleInput), 0644)
+	if err != nil {
+		t.Fatalf("Error creating sample input file: %v", err)
+	}
 
 	// Test compression
 	compressArgs := []string{"-compress", "-input", inputFileName, "-output", outputFileName, "-password", password}
@@ -184,7 +188,7 @@ func TestMain_CompressAndDecompress(t *testing.T) {
 		t.Errorf("Error reading decompressed output file: %v", err)
 	}
 
-	if !bytes.Equal(originalData, decodedData) {
+	if string(originalData) != string(decodedData) {
 		t.Errorf("Decompressed data does not match original input data")
 	}
 }
