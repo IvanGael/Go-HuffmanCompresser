@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -128,7 +129,7 @@ func readCodes(scanner *bufio.Scanner) (HuffmanCode, error) {
 
 // Function to decode data using Huffman codes
 func decode(encodedData string, codes HuffmanCode) []byte {
-	var decoded strings.Builder
+	var decoded bytes.Buffer
 	code := ""
 	for _, bit := range encodedData {
 		code += string(bit)
@@ -137,7 +138,8 @@ func decode(encodedData string, codes HuffmanCode) []byte {
 			code = ""
 		}
 	}
-	return []byte(decoded.String())
+	// Replace the special character with newline
+	return bytes.ReplaceAll(decoded.Bytes(), []byte{'\x00'}, []byte{'\n'})
 }
 
 // Function to reverse lookup symbol from Huffman codes
@@ -184,16 +186,16 @@ func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) 
 	}
 
 	// Read the rest of the data
-	var encodedData string
+	var encodedData strings.Builder
 	for scanner.Scan() {
-		encodedData += scanner.Text() + "\n"
+		encodedData.WriteString(scanner.Text())
 	}
 
 	if err := scanner.Err(); err != nil {
 		return "", "", nil, err
 	}
 
-	return encodedData, password, codes, nil
+	return encodedData.String(), password, codes, nil
 }
 
 func main() {
@@ -218,6 +220,9 @@ func main() {
 			fmt.Println("Error:", err)
 			return
 		}
+
+		// Replace newline characters with a special character
+		data = bytes.ReplaceAll(data, []byte{'\n'}, []byte{'\x00'})
 
 		// Calculate symbol frequencies
 		frequencies := make(map[byte]int)
@@ -284,8 +289,7 @@ func main() {
 			return
 		}
 
-		// Read encoded
-		// data
+		// Read encoded data
 		encodedData, _, _, err := readEncodedData(*inputFileName)
 		if err != nil {
 			fmt.Println("Error reading encoded data:", err)
