@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -203,7 +202,7 @@ func main() {
 
 	if *compress {
 		// Read input data
-		data, err := ioutil.ReadFile(*inputFileName)
+		data, err := os.ReadFile(*inputFileName)
 		if err != nil {
 			fmt.Println("Error:", err)
 			return
@@ -259,7 +258,7 @@ func main() {
 		decodedData := decode(encodedData, codes)
 
 		// Write decoded data to output file
-		err = ioutil.WriteFile(*outputFileName, []byte(decodedData), 0644)
+		err = os.WriteFile(*outputFileName, []byte(decodedData), 0644)
 		if err != nil {
 			fmt.Println("Error writing decoded data:", err)
 			return
