@@ -5,13 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
+
+	// "encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/argon2"
 )
 
 // Define a struct for the Huffman tree node
@@ -86,55 +89,61 @@ func encode(data string, codes HuffmanCode) string {
 	return encoded.String()
 }
 
-// Function to encrypt password
-func encryptPassword(password string) (string, error) {
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return "", err
+// Function to derive encryption key
+func deriveKey(password []byte, salt []byte) ([]byte, []byte) {
+	if salt == nil {
+		salt = make([]byte, 16)
+		if _, err := rand.Read(salt); err != nil {
+			panic(err)
+		}
 	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	ciphertext := make([]byte, aes.BlockSize+len(password))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
-	}
-
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(password))
-
-	return base64.StdEncoding.EncodeToString(append(key, ciphertext...)), nil
+	return argon2.IDKey(password, salt, 1, 64*1024, 4, 32), salt
 }
 
-// Function to decrypt password
-func decryptPassword(encryptedPassword string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(encryptedPassword)
-	if err != nil {
-		return "", err
-	}
-
-	key := data[:32]
-	ciphertext := data[32:]
+// Function to encrypt data
+func encrypt(plaintext []byte, password string) ([]byte, error) {
+	key, salt := deriveKey([]byte(password), nil)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if len(ciphertext) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
 	}
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
 
-	return string(ciphertext), nil
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return append(salt, ciphertext...), nil
+}
+
+// Function to decrypt data
+func decrypt(ciphertext []byte, password string) ([]byte, error) {
+	salt, ciphertext := ciphertext[:16], ciphertext[16:]
+	key, _ := deriveKey([]byte(password), salt)
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 // Function to write encoded data to file
@@ -145,28 +154,20 @@ func writeEncodedData(encodedData string, outputFileName string, password string
 	}
 	defer outputFile.Close()
 
-	// Encrypt password
-	encryptedPassword, err := encryptPassword(password)
+	// Encrypt the entire content
+	content := fmt.Sprintf("%s\n----DATA----\n", encodedData)
+	for symbol, code := range codes {
+		content += fmt.Sprintf("%d:%s\n", symbol, code)
+	}
+	content += "----END CODES----\n"
+
+	encryptedContent, err := encrypt([]byte(content), password)
 	if err != nil {
 		return err
 	}
 
-	// Write encrypted password to file
-	fmt.Fprintln(outputFile, encryptedPassword)
-
-	// Separator between password and encoded data
-	fmt.Fprintln(outputFile, "----DATA----")
-
-	// Write Huffman codes to file
-	for symbol, code := range codes {
-		fmt.Fprintf(outputFile, "%d:%s\n", symbol, code)
-	}
-
-	// Separator between codes and encoded data
-	fmt.Fprintln(outputFile, "----END CODES----")
-
-	// Write encoded data to file
-	_, err = outputFile.WriteString(encodedData)
+	// Write encrypted content to file
+	_, err = outputFile.Write(encryptedContent)
 	return err
 }
 
@@ -215,24 +216,24 @@ func reverseLookup(codes HuffmanCode, code string) (rune, bool) {
 }
 
 // Function to read encoded data from file
-func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) {
-	inputFile, err := os.Open(inputFileName)
+func readEncodedData(inputFileName string, password string) (string, HuffmanCode, error) {
+	inputFile, err := os.ReadFile(inputFileName)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
-	defer inputFile.Close()
 
-	scanner := bufio.NewScanner(inputFile)
+	// Decrypt the entire content
+	decryptedContent, err := decrypt(inputFile, password)
+	if err != nil {
+		return "", nil, err
+	}
 
-	// Read encrypted password from the first line
+	scanner := bufio.NewScanner(strings.NewReader(string(decryptedContent)))
+
+	// Read encoded data
+	var encodedData string
 	scanner.Scan()
-	encryptedPassword := scanner.Text()
-
-	// Decrypt password
-	password, err := decryptPassword(encryptedPassword)
-	if err != nil {
-		return "", "", nil, err
-	}
+	encodedData = scanner.Text()
 
 	// Read until the separator "----DATA----"
 	for scanner.Scan() {
@@ -244,20 +245,10 @@ func readEncodedData(inputFileName string) (string, string, HuffmanCode, error) 
 	// Read Huffman codes
 	codes, err := readCodes(scanner)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 
-	// Read the rest of the data
-	var encodedData strings.Builder
-	for scanner.Scan() {
-		encodedData.WriteString(scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", "", nil, err
-	}
-
-	return encodedData.String(), password, codes, nil
+	return encodedData, codes, nil
 }
 
 func main() {
@@ -310,15 +301,9 @@ func main() {
 		}
 
 		// Read encoded data from file
-		encodedData, storedPassword, codes, err := readEncodedData(*inputFileName)
+		encodedData, codes, err := readEncodedData(*inputFileName, *password)
 		if err != nil {
 			fmt.Println("Error reading encoded data:", err)
-			return
-		}
-
-		// Compare passwords
-		if *password != storedPassword {
-			fmt.Println("Error: Incorrect password.")
 			return
 		}
 
