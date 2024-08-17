@@ -303,6 +303,10 @@ func main() {
 		// Read encoded data from file
 		encodedData, codes, err := readEncodedData(*inputFileName, *password)
 		if err != nil {
+			if err.Error() == "cipher: message authentication failed" {
+				fmt.Println("Error reading encoded data : Invalid password")
+				return
+			}
 			fmt.Println("Error reading encoded data:", err)
 			return
 		}

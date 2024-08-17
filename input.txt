@@ -1,9 +1,7 @@
-I didn't expect Flutter would really pay me off...
+Shark Alert! YOLO AI-Vision in Action
 
-I still remember the time of initial 2020 Covid-19 when I started my career in development.
+Last week, several news outlets ran a story about SharkEye, which is an AI-vision shark detection program, developed at the University of California, Santa Barbara, and deployed at California’s Padaro Beach, which is an area where surfers and great white sharks are both frequently found.
 
-Having a low spec PC, 4 GB ddr2 RAM, 1 GB Nvidia Graphic Card with a broken fan, running Android Studio and the PC starts Whirr... click... clunk... bzzzzt... whirr...
+After quickly describing the program itself, the video identifies the underlying technology that was used for the vision aspect, confirming from the project’s GitHub page that YOLO v8 by Ultralytics was used.
 
-The time full of frustration, everything seems a waste of time, and a blurry future.
-
-After that PC which was half frustration and little and a half motivation drove me... and I took, an hp Laptop, and then... many other small ones... and MacBook Air M1 and, now MacBook Pro M3 Latest.
+Basically, Ultralytics created an abstraction layer that simplifies the deployment of computer vision models, so that even developers with almost no experience in computer vision can quickly implement sophisticated projects. To illustrate, the video then shows a demo of an object detection and identification task being set up and run on Google Colab. It then concludes with examples of types of projects that can be implemented by Ultralytics YOLO v8.
