@@ -18,7 +18,7 @@ func TestBuildHuffmanTree(t *testing.T) {
 	if root == nil {
 		t.Error("Expected non-nil root node")
 	}
-	if root.Frequency != 11 {
+	if root != nil && root.Frequency != 11 {
 		t.Errorf("Expected root frequency to be 11, got %d", root.Frequency)
 	}
 }
