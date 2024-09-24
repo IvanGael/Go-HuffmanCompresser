@@ -5,6 +5,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/json"
+	"log"
+	"net/http"
 
 	// "encoding/base64"
 	"flag"
@@ -251,15 +254,145 @@ func readEncodedData(inputFileName string, password string) (string, HuffmanCode
 	return encodedData, codes, nil
 }
 
+func compressHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "Error reading the file", http.StatusInternalServerError)
+		return
+	}
+
+	text := string(content)
+
+	// Calculate symbol frequencies
+	frequencies := make(map[rune]int)
+	for _, symbol := range text {
+		frequencies[symbol]++
+	}
+
+	// Build Huffman tree
+	root := buildHuffmanTree(frequencies)
+
+	// Generate Huffman codes
+	codes := generateCodes(root)
+
+	// Encode input data
+	encodedData := encode(text, codes)
+
+	// Prepare tree data for visualization
+	treeData := prepareTreeData(root)
+
+	// Calculate compressed size (in bytes)
+	compressedSize := (len(encodedData) + 7) / 8 // Convert bits to bytes, rounding up
+
+	response := struct {
+		EncodedData    string      `json:"encodedData"`
+		Codes          HuffmanCode `json:"codes"`
+		Tree           interface{} `json:"tree"`
+		CompressedSize int         `json:"compressedSize"`
+		OriginalSize   int         `json:"originalSize"`
+	}{
+		EncodedData:    encodedData,
+		Codes:          codes,
+		Tree:           treeData,
+		CompressedSize: compressedSize,
+		OriginalSize:   len(content),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func decompressHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	var input struct {
+		EncodedData string      `json:"encodedData"`
+		Codes       HuffmanCode `json:"codes"`
+	}
+
+	err = json.NewDecoder(file).Decode(&input)
+	if err != nil {
+		http.Error(w, "Invalid input file", http.StatusBadRequest)
+		return
+	}
+
+	decodedData := decode(input.EncodedData, input.Codes)
+
+	response := struct {
+		DecodedData string `json:"decodedData"`
+	}{
+		DecodedData: decodedData,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Helper function to prepare tree data for visualization
+func prepareTreeData(node *Node) map[string]interface{} {
+	if node == nil {
+		return nil
+	}
+
+	data := map[string]interface{}{
+		"symbol":    node.Symbol,
+		"frequency": node.Frequency,
+	}
+
+	if node.Left != nil {
+		data["left"] = prepareTreeData(node.Left)
+	}
+	if node.Right != nil {
+		data["right"] = prepareTreeData(node.Right)
+	}
+
+	return data
+}
+
 func main() {
 	compress := flag.Bool("compress", false, "Compress the input file")
 	decompress := flag.Bool("decompress", false, "Decompress the input file")
 	inputFileName := flag.String("input", "input.txt", "Input file name")
 	outputFileName := flag.String("output", "output.bin", "Output file name")
 	password := flag.String("password", "", "Password for accessing the compressed data")
+	serve := flag.Bool("serve", false, "Start the HTTP server")
+	port := flag.String("port", "8080", "Port for the HTTP server")
 	flag.Parse()
 
-	if *compress {
+	if *serve {
+		// Serve static files
+		fs := http.FileServer(http.Dir("./static"))
+		http.Handle("/", fs)
+
+		// API endpoints
+		http.HandleFunc("/api/compress", compressHandler)
+		http.HandleFunc("/api/decompress", decompressHandler)
+
+		fmt.Printf("Starting server on :%s...\n", *port)
+		log.Fatal(http.ListenAndServe(":"+*port, nil))
+	} else if *compress {
 		// Read input data
 		data, err := os.ReadFile(*inputFileName)
 		if err != nil {
@@ -323,6 +456,6 @@ func main() {
 
 		fmt.Println("Decompression successful. Output written to", *outputFileName)
 	} else {
-		fmt.Println("Please specify either -compress or -decompress.")
+		fmt.Println("Please specify either -compress, -decompress, or -serve.")
 	}
 }

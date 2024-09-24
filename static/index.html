@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Huffman Compressor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #fileInput {
+            margin-bottom: 20px;
+        }
+        #outputArea {
+            width: 100%;
+            max-width: 600px;
+            height: 200px;
+            margin-bottom: 20px;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        #treeContainer {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+        .node circle {
+            fill: #fff;
+            stroke: steelblue;
+            stroke-width: 3px;
+        }
+        .node text {
+            font: 12px sans-serif;
+        }
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 2px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Huffman Compressor</h1>
+    <input type="file" id="fileInput" accept=".txt,.json">
+    <button id="compressBtn">Compress</button>
+    <button id="decompressBtn">Decompress</button>
+    <button id="downloadBtn" style="display: none;">Download Compressed File</button>
+    <textarea id="outputArea" readonly></textarea>
+    <div id="treeContainer"></div>
+
+    <script>
+        function visualizeTree(treeData) {
+            const width = 800;
+            const height = 600;
+            const margin = { top: 20, right: 90, bottom: 20, left: 90 };
+
+            d3.select("#treeContainer").selectAll("*").remove();
+
+            const svg = d3.select("#treeContainer")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const treeLayout = d3.cluster()
+                .size([height - margin.top - margin.bottom, width - margin.left - margin.right]);
+
+            const root = d3.hierarchy(treeData);
+            const tree = treeLayout(root);
+
+            // Create links
+            const link = svg.selectAll(".link")
+                .data(tree.links())
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d3.linkHorizontal()
+                    .x(d => d.y)
+                    .y(d => d.x));
+
+            // Create nodes
+            const node = svg.selectAll(".node")
+                .data(tree.descendants())
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            node.append("circle")
+                .attr("r", 10)
+                .style("fill", d => d.children ? "#fff" : "#ccc");
+
+            node.append("text")
+                .attr("dy", ".35em")
+                .attr("x", d => d.children ? -13 : 13)
+                .style("text-anchor", d => d.children ? "end" : "start")
+                .text(d => d.data.symbol || d.data.frequency);
+
+            // Add labels for probabilities
+            node.append("text")
+                .attr("dy", "1.75em")
+                .attr("x", d => d.children ? -13 : 13)
+                .style("text-anchor", d => d.children ? "end" : "start")
+                .style("font-size", "10px")
+                .text(d => d.data.probability ? `${(d.data.probability * 100).toFixed(2)}%` : '');
+
+            // Add zoom functionality
+            const zoom = d3.zoom()
+                .scaleExtent([0.5, 3])
+                .on("zoom", (event) => {
+                    svg.attr("transform", event.transform);
+                });
+
+            d3.select("#treeContainer svg").call(zoom);
+        }
+
+        let compressedData = null;
+
+        document.getElementById("compressBtn").addEventListener("click", async () => {
+            const fileInput = document.getElementById("fileInput");
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Please select a file first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch('/api/compress', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+                compressedData = result;
+                document.getElementById("outputArea").value = `Compression complete. File size: ${result.compressedSize} bytes`;
+                document.getElementById("downloadBtn").style.display = "inline-block";
+                
+                if (result.tree) {
+                    visualizeTree(result.tree);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred during compression.');
+            }
+        });
+
+        document.getElementById("decompressBtn").addEventListener("click", async () => {
+            const fileInput = document.getElementById("fileInput");
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Please select a compressed file first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch('/api/decompress', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+                document.getElementById("outputArea").value = result.decodedData;
+                document.getElementById("downloadBtn").style.display = "none";
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred during decompression.');
+            }
+        });
+
+        document.getElementById("downloadBtn").addEventListener("click", () => {
+            if (compressedData) {
+                const blob = new Blob([JSON.stringify(compressedData)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'compressed_file.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+    </script>
+</body>
+</html>
