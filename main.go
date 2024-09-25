@@ -290,22 +290,17 @@ func compressHandler(w http.ResponseWriter, r *http.Request) {
 	// Encode input data
 	encodedData := encode(text, codes)
 
-	// Prepare tree data for visualization
-	treeData := prepareTreeData(root)
-
 	// Calculate compressed size (in bytes)
 	compressedSize := (len(encodedData) + 7) / 8 // Convert bits to bytes, rounding up
 
 	response := struct {
 		EncodedData    string      `json:"encodedData"`
 		Codes          HuffmanCode `json:"codes"`
-		Tree           interface{} `json:"tree"`
 		CompressedSize int         `json:"compressedSize"`
 		OriginalSize   int         `json:"originalSize"`
 	}{
 		EncodedData:    encodedData,
 		Codes:          codes,
-		Tree:           treeData,
 		CompressedSize: compressedSize,
 		OriginalSize:   len(content),
 	}
@@ -348,27 +343,6 @@ func decompressHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-// Helper function to prepare tree data for visualization
-func prepareTreeData(node *Node) map[string]interface{} {
-	if node == nil {
-		return nil
-	}
-
-	data := map[string]interface{}{
-		"symbol":    node.Symbol,
-		"frequency": node.Frequency,
-	}
-
-	if node.Left != nil {
-		data["left"] = prepareTreeData(node.Left)
-	}
-	if node.Right != nil {
-		data["right"] = prepareTreeData(node.Right)
-	}
-
-	return data
 }
 
 func main() {
