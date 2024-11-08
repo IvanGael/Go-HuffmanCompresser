@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 
-	// "encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -259,37 +258,29 @@ func compressHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
-
 	content, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, "Error reading the file", http.StatusInternalServerError)
 		return
 	}
-
 	text := string(content)
-
 	// Calculate symbol frequencies
 	frequencies := make(map[rune]int)
 	for _, symbol := range text {
 		frequencies[symbol]++
 	}
-
 	// Build Huffman tree
 	root := buildHuffmanTree(frequencies)
-
 	// Generate Huffman codes
 	codes := generateCodes(root)
-
 	// Encode input data
 	encodedData := encode(text, codes)
-
 	// Calculate compressed size (in bytes)
 	compressedSize := (len(encodedData) + 7) / 8 // Convert bits to bytes, rounding up
 
@@ -302,9 +293,8 @@ func compressHandler(w http.ResponseWriter, r *http.Request) {
 		EncodedData:    encodedData,
 		Codes:          codes,
 		CompressedSize: compressedSize,
-		OriginalSize:   len(content),
+		OriginalSize:   len(text),
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }

@@ -4,95 +4,148 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Huffman Compressor</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+    <!-- https://tailwindcss.com/ -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#211A44',
+                        secondary: '#8A97FE',
+                    }
+                }
+            }
         }
-        #fileInput {
-            margin-bottom: 20px;
-        }
-        #outputArea {
-            width: 100%;
-            max-width: 600px;
-            height: 200px;
-            margin-bottom: 20px;
-        }
-        button {
-            margin: 10px;
-            padding: 10px 20px;
-            font-size: 16px;
-        }
-        .link {
-            fill: none;
-            stroke: #ccc;
-            stroke-width: 2px;
-        }
-    </style>
+    </script>
 </head>
-<body>
-    <h1>Huffman Compressor</h1>
-    <input type="file" id="fileInput" accept=".txt,.json">
-    <button id="compressBtn">Compress</button>
-    <button id="decompressBtn">Decompress</button>
-    <button id="downloadBtn" style="display: none;">Download Compressed File</button>
-    <textarea id="outputArea" readonly></textarea>
-
+<body class="flex flex-col items-center p-4">
+    <h1 class="text-2xl font-bold mb-4">Huffman Compressor</h1>
+    <div class="flex w-full max-w-4xl">
+        <div class="w-1/2 p-4">
+            <input type="file" id="fileInput" accept=".txt,.json" class="mb-4 p-2 border border-gray-300 rounded w-full">
+            <div class="mb-4">
+                <label class="inline-flex items-center">
+                    <input type="radio" name="action" value="compress" checked class="form-radio">
+                    <span class="ml-2">Compress</span>
+                </label>
+                <label class="inline-flex items-center ml-4">
+                    <input type="radio" name="action" value="decompress" class="form-radio">
+                    <span class="ml-2">Decompress</span>
+                </label>
+            </div>
+            <button id="processBtn" class="bg-indigo-500 text-white px-4 py-2 rounded mb-2 w-full">Process</button>
+            <textarea id="outputArea" readonly class="w-full h-48 p-2 border border-gray-300 rounded mb-4"></textarea>
+            <button id="downloadBtn" class="bg-fuchsia-500 text-white px-4 py-2 rounded mb-2 hidden w-full">Download Compressed File</button>
+        </div>
+        <div class="w-1/2 p-4">
+            <div id="processSteps" class="space-y-2">
+                <div id="step1" class="hidden">Calculating symbol frequencies...</div>
+                <div id="step2" class="hidden">Building Huffman tree...</div>
+                <div id="step3" class="hidden">Generating Huffman codes...</div>
+                <div id="step4" class="hidden">Encoding data...</div>
+                <div id="step5" class="hidden">Task completed.</div>
+            </div>
+            <div id="loader" class="hidden mt-4 flex justify-center items-center">
+                <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
     <script>
         let compressedData = null;
 
-        document.getElementById("compressBtn").addEventListener("click", async () => {
+        function showLoader(show) {
+            document.getElementById("loader").classList.toggle("hidden", !show);
+        }
+
+        function showStep(step) {
+            document.querySelectorAll("#processSteps > div").forEach(div => div.classList.add("hidden"));
+            document.getElementById(step).classList.remove("hidden");
+        }
+
+        function markStepComplete(step) {
+            const stepElement = document.getElementById(step);
+            // stepElement.innerHTML = stepElement.innerHTML.replace('✅',' ')
+            stepElement.innerHTML = `✅ ${stepElement.innerHTML}`;
+        }
+
+        async function simulateStep(step) {
+            showStep(step);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            markStepComplete(step);
+        }
+
+        function resetChecker() {
+            const step1Element = document.getElementById("step1");
+            step1Element.innerHTML = step1Element.innerHTML.replace('✅',' ')
+
+            const step2Element = document.getElementById("step2");
+            step2Element.innerHTML = step2Element.innerHTML.replace('✅',' ')
+
+            const step3Element = document.getElementById("step3");
+            step3Element.innerHTML = step3Element.innerHTML.replace('✅',' ')
+
+            const step4Element = document.getElementById("step4");
+            step4Element.innerHTML = step4Element.innerHTML.replace('✅',' ')
+
+            const step5Element = document.getElementById("step5");
+            step5Element.innerHTML = step5Element.innerHTML.replace('✅',' ')
+        }
+
+        document.getElementById("processBtn").addEventListener("click", async () => {
+            resetChecker()
             const fileInput = document.getElementById("fileInput");
             const file = fileInput.files[0];
             if (!file) {
                 alert("Please select a file first.");
                 return;
             }
-
+            const action = document.querySelector('input[name="action"]:checked').value;
             const formData = new FormData();
             formData.append("file", file);
-
+            const processBtn = document.getElementById("processBtn");
+            processBtn.disabled = true;
+            processBtn.classList.add("disabled:opacity-85")
+            showLoader(true);
             try {
-                const response = await fetch('/api/compress', {
-                    method: 'POST',
-                    body: formData,
-                });
-                const result = await response.json();
-                compressedData = result;
-                document.getElementById("outputArea").value = `Compression complete. File size: ${result.compressedSize} bytes`;
-                document.getElementById("downloadBtn").style.display = "inline-block";
+                if (action === "compress") {
+                    const response = await fetch('/api/compress', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    await simulateStep("step1");
+                    await simulateStep("step2");
+                    await simulateStep("step3");
+                    await simulateStep("step4");
+                    const result = await response.json();
+                    compressedData = result;
+                    document.getElementById("outputArea").value = `Compression complete. File size: ${result.compressedSize} bytes`;
+                    document.getElementById("downloadBtn").classList.remove("hidden");
+                    await simulateStep("step5");
+                } else {
+                    document.getElementById("step4").innerHTML = "Decoding data..."
+                    const response = await fetch('/api/decompress', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    await simulateStep("step1");
+                    await simulateStep("step2");
+                    await simulateStep("step3");
+                    await simulateStep("step4");
+                    const result = await response.json();
+                    document.getElementById("outputArea").value = result.decodedData;
+                    document.getElementById("downloadBtn").classList.add("hidden");
+                    await simulateStep("step5");
+                }
             } catch (error) {
                 console.error('Error:', error);
-                alert('An error occurred during compression.');
-            }
-        });
-
-        document.getElementById("decompressBtn").addEventListener("click", async () => {
-            const fileInput = document.getElementById("fileInput");
-            const file = fileInput.files[0];
-            if (!file) {
-                alert("Please select a compressed file first.");
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append("file", file);
-
-            try {
-                const response = await fetch('/api/decompress', {
-                    method: 'POST',
-                    body: formData,
-                });
-                const result = await response.json();
-                document.getElementById("outputArea").value = result.decodedData;
-                document.getElementById("downloadBtn").style.display = "none";
-            } catch (error) {
-                console.error('Error:', error);
-                alert('An error occurred during decompression.');
+                alert('An error occurred during processing.');
+            } finally {
+                showLoader(false);
+                processBtn.disabled = false;
             }
         });
 
